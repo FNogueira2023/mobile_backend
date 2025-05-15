@@ -17,7 +17,7 @@ async function validateEmailAndNickname(email, nickname) {
       if (existingUser.email === email) {
         return {
           isValid: false,
-          message: 'Email already exists',
+          message: 'Email ya existe',
           isRegistered: true,
           canResetPassword: true
         };
@@ -30,7 +30,7 @@ async function validateEmailAndNickname(email, nickname) {
         
         return {
           isValid: false,
-          message: 'Nickname already exists',
+          message: 'Nickname ya existe',
           isRegistered: false,
           suggestedNicknames: similarNicknames.map(n => n.nickname)
         };

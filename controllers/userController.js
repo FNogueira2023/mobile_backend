@@ -19,7 +19,7 @@ exports.validateEmailAndNickname = async (req, res) => {
     if (!email || !nickname) {
       return res.status(400).json({
         success: false,
-        message: 'Email and nickname are required'
+        message: 'Email y nickname son requeridos'
       });
     }
 
@@ -28,7 +28,7 @@ exports.validateEmailAndNickname = async (req, res) => {
     if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid email format'
+        message: 'Formato de email inválido'
       });
     }
 
@@ -37,7 +37,7 @@ exports.validateEmailAndNickname = async (req, res) => {
     if (!nicknameRegex.test(nickname)) {
       return res.status(400).json({
         success: false,
-        message: 'Nickname can only contain letters, numbers, and underscores'
+        message: 'Nickname solo puede contener letras, números y guiones bajos'
       });
     }
 
@@ -47,31 +47,31 @@ exports.validateEmailAndNickname = async (req, res) => {
       if (validationResult.isRegistered) {
         return res.status(400).json({
           success: false,
-          message: 'Email already registered',
+          message: 'Email ya registrado',
           canResetPassword: validationResult.canResetPassword
         });
       } else {
         return res.status(400).json({
           success: false,
-          message: 'Nickname already exists',
+          message: 'Nickname ya existe',
           suggestedNicknames: validationResult.suggestedNicknames
         });
       }
     }
 
     // Send registration email
-    const emailSubject = 'Your Registration Code';
+    const emailSubject = 'Tu código de registración';
     const emailHtml = `
-      <h2>Welcome to our service!</h2>
-      <p>Your registration code is: <strong>${validationResult.registrationCode}</strong></p>
-      <p>This code will expire at: ${validationResult.codeExpiry}</p>
+      <h2>Bienvenido a LamaCooking!</h2>
+      <p>Tu código de registración es: <strong>${validationResult.registrationCode}</strong></p>
+      <p>El código va a expirar en: ${validationResult.codeExpiry}</p>
     `;
     
     await sendEmail(email, emailSubject, emailHtml);
 
     res.status(200).json({
       success: true,
-      message: 'Registration code sent to your email',
+      message: 'Código de registración enviado a tu correo',
       codeExpiry: validationResult.codeExpiry
     });
   } catch (error) {
