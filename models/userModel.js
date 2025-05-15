@@ -172,10 +172,21 @@ async function getUserByEmail(email) {
   }
 }
 
+// Get user by userId
+async function getUserById(userId) {
+  try {
+    const [users] = await pool.query('SELECT * FROM users WHERE userId = ?', [userId]);
+    return users[0];
+  } catch (error) {
+    throw error;
+  }
+}
+
 module.exports = {
   validateEmailAndNickname,
   completeRegistration,
   requestPasswordReset,
   resetPassword,
-  getUserByEmail
+  getUserByEmail,
+  getUserById
 }; 

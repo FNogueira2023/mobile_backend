@@ -19,25 +19,25 @@ exports.upgradeToStudent = async (req, res) => {
     if (!userId || !cardNumber || !idFront || !idBack) {
       return res.status(400).json({
         success: false,
-        message: 'All fields are required for student upgrade'
+        message: 'Todos los campos son obligatorios'
       });
     }
 
     // Check if user exists
-    const user = await userModel.getUserByEmail(userId);
+    const user = await userModel.getUserById(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: 'Usuario no encontrado'
       });
     }
 
     // Check if user is already a student
-    const existingStudent = await studentModel.getStudentByUserId(userId);
+    const existingStudent = await studentModel.getUserById(userId);
     if (existingStudent) {
       return res.status(400).json({
         success: false,
-        message: 'User is already a student'
+        message: 'Usuario ya es estudiante'
       });
     }
 
@@ -52,7 +52,7 @@ exports.upgradeToStudent = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Student upgrade request submitted successfully',
+      message: 'Estudiante creado exitosamente',
       studentId: result.studentId
     });
   } catch (error) {

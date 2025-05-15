@@ -6,8 +6,8 @@ async function createStudent(studentData) {
     const { userId, cardNumber, idFront, idBack, process } = studentData;
     
     const [result] = await pool.query(
-      `INSERT INTO students (userId, cardNumber, idFront, idBack, process, accountBalance, createdAt, updatedAt) 
-       VALUES (?, ?, ?, ?, ?, 0, NOW(), NOW())`,
+      `INSERT INTO students (userId, cardNumber, idFront, idBack, process, accountBalance) 
+       VALUES (?, ?, ?, ?, ?, 0)`,
       [userId, cardNumber, idFront, idBack, process]
     );
 
@@ -59,9 +59,20 @@ async function updateAccountBalance(studentId, amount) {
   }
 }
 
+// Get user by userId
+async function getUserById(userId) {
+  try {
+    const [users] = await pool.query('SELECT * FROM students WHERE userId = ?', [userId]);
+    return users[0];
+  } catch (error) {
+    throw error;
+  }
+}
+
 module.exports = {
   createStudent,
   getStudentByUserId,
   updateStudentProcess,
-  updateAccountBalance
+  updateAccountBalance,
+  getUserById
 }; 
