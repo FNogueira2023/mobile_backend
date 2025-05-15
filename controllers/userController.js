@@ -120,11 +120,11 @@ exports.completeRegistration = async (req, res) => {
     }
 
     // Send welcome email
-    const welcomeSubject = 'Welcome to Our Platform!';
+    const welcomeSubject = 'Bienvenido a la plataforma!';
     const welcomeHtml = `
-      <h2>Welcome aboard, ${nickname}!</h2>
-      <p>Your account has been successfully created.</p>
-      <p>Thank you for joining our community!</p>
+      <h2>Bienvenido, ${nickname}!</h2>
+      <p>Tu cuenta ha sido creada.</p>
+      <p>Gracias por unirte a la comunidad!</p>
     `;
     await sendEmail(email, welcomeSubject, welcomeHtml);
 
