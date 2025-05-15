@@ -9,8 +9,10 @@
   "license": "ISC",
   "description": "Node.js backend for recipe and course management system using MySQL.",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "mysql2": "^3.14.1"
+    "mysql2": "^3.14.1",
+    "nodemailer": "^7.0.3"
   }
 }
