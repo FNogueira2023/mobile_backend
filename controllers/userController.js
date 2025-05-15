@@ -101,7 +101,7 @@ exports.completeRegistration = async (req, res) => {
     if (!passwordRegex.test(password)) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters long and contain at least one letter and one number'
+        message: 'La contraseña debe tener al menos 8 caracteres y contener al menos una letra y un número'
       });
     }
 
@@ -150,7 +150,7 @@ exports.requestPasswordReset = async (req, res) => {
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: 'Email is required'
+        message: 'Email es requerido'
       });
     }
 
@@ -164,18 +164,18 @@ exports.requestPasswordReset = async (req, res) => {
     }
 
     // Send password reset email
-    const resetSubject = 'Password Reset Request';
+    const resetSubject = 'Nueva solicitud de cambio de contraseña';
     const resetHtml = `
-      <h2>Password Reset</h2>
-      <p>Your password reset code is: <strong>${result.resetCode}</strong></p>
-      <p>This code will expire at: ${result.codeExpiry}</p>
-      <p>If you didn't request this, please ignore this email.</p>
+      <h2>Solicitud cambio de contraseña </h2>
+      <p>Tu código de solicitud es: <strong>${result.resetCode}</strong></p>
+      <p>Este código expirará en : ${result.codeExpiry}</p>
+      <p>Si no has enviado la solicitud. Ignora este mail.</p>
     `;
     await sendEmail(email, resetSubject, resetHtml);
 
     res.status(200).json({
       success: true,
-      message: 'Password reset code sent to your email',
+      message: 'Codigo de cambio de contraseña enviado a tu correo',
       codeExpiry: result.codeExpiry
     });
   } catch (error) {
@@ -195,7 +195,7 @@ exports.resetPassword = async (req, res) => {
     if (!email || !resetCode || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: 'All fields are required'
+        message: 'Todos los campos son requeridos'
       });
     }
 
@@ -204,7 +204,7 @@ exports.resetPassword = async (req, res) => {
     if (!passwordRegex.test(newPassword)) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters long and contain at least one letter and one number'
+        message: 'La contraseña debe tener al menos 8 caracteres y contener al menos una letra y un número'
       });
     }
 
@@ -218,17 +218,17 @@ exports.resetPassword = async (req, res) => {
     }
 
     // Send password changed confirmation
-    const confirmSubject = 'Password Changed Successfully';
+    const confirmSubject = 'Confirmación de cambio de contraseña';
     const confirmHtml = `
-      <h2>Password Update Confirmation</h2>
-      <p>Your password has been successfully updated.</p>
-      <p>If you didn't make this change, please contact our support team immediately.</p>
+      <h2>Confirmación de cambio de contraseña</h2>
+      <p>Tu nueva contraseña ha sido actualizada.</p>
+      <p>Si no has hecho este cambio. Por favor contacta a nuestro equipo.</p>
     `;
     await sendEmail(email, confirmSubject, confirmHtml);
 
     res.status(200).json({
       success: true,
-      message: 'Password reset successfully'
+      message: 'Contraseña actualizada exitosamente'
     });
   } catch (error) {
     console.error('Error in resetPassword:', error);

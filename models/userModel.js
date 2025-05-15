@@ -140,7 +140,7 @@ async function resetPassword(email, resetCode, newPassword) {
     if (!reset.length) {
       return {
         success: false,
-        message: 'Invalid or expired reset code'
+        message: 'Código de restablecimiento inválido o expirado'
       };
     }
 
