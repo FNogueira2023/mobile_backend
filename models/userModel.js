@@ -2,6 +2,7 @@ const { pool } = require('../config/db');
 const bcrypt = require('bcrypt');
 const { generateRegistrationCode, generatePasswordResetCode } = require('../utils/emailUtils');
 
+
 // Step 1: Validate email and nickname
 async function validateEmailAndNickname(email, nickname) {
   try {

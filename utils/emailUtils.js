@@ -1,66 +1,53 @@
 const nodemailer = require('nodemailer');
-const crypto = require('crypto');
+const sgTransport = require('nodemailer-sendgrid-transport');
 
-// Configure email transporter
-const transporter = nodemailer.createTransport({
-  // Configure your email service here
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: true,
+// Configure SendGrid transporter
+const transporter = nodemailer.createTransport(sgTransport({
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD
+    api_key: process.env.SENDGRID_API_KEY
   }
-});
+}));
 
-// Generate registration code
-function generateRegistrationCode() {
-  return crypto.randomBytes(3).toString('hex').toUpperCase();
-}
+/**
+ * Sends an email using SendGrid
+ * @param {string} to - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} html - HTML content of the email
+ * @returns {boolean} True if email was sent successfully
+ */
+const sendEmail = async (to, subject, html) => {
+  try {
+    await transporter.sendMail({
+      to,
+      from: process.env.FROM_EMAIL || 'noreply@yourdomain.com',
+      subject,
+      html
+    });
+    return true;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return false;
+  }
+};
 
-// Generate password reset code
-function generatePasswordResetCode() {
-  return crypto.randomBytes(4).toString('hex').toUpperCase();
-}
+/**
+ * Generates a 6-digit numeric registration code
+ * @returns {string} 6-digit code
+ */
+const generateRegistrationCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
-// Send registration success email with code
-async function sendRegistrationEmail(email, nickname, code) {
-  const mailOptions = {
-    from: process.env.EMAIL_FROM,
-    to: email,
-    subject: 'Complete Your Registration',
-    html: `
-      <h1>Welcome to Our Platform!</h1>
-      <p>Your registration for nickname "${nickname}" was successful.</p>
-      <p>Use the following code to complete your registration:</p>
-      <h2>${code}</h2>
-      <p>This code is valid for 24 hours.</p>
-    `
-  };
-
-  await transporter.sendMail(mailOptions);
-}
-
-// Send password reset email
-async function sendPasswordResetEmail(email, code) {
-  const mailOptions = {
-    from: process.env.EMAIL_FROM,
-    to: email,
-    subject: 'Password Reset Request',
-    html: `
-      <h1>Password Reset Request</h1>
-      <p>Use the following code to reset your password:</p>
-      <h2>${code}</h2>
-      <p>This code is valid for 30 minutes.</p>
-    `
-  };
-
-  await transporter.sendMail(mailOptions);
-}
+/**
+ * Generates an 8-character alphanumeric reset code
+ * @returns {string} 8-character uppercase code
+ */
+const generatePasswordResetCode = () => {
+  return Math.random().toString(36).substring(2, 10).toUpperCase();
+};
 
 module.exports = {
+  sendEmail,
   generateRegistrationCode,
-  generatePasswordResetCode,
-  sendRegistrationEmail,
-  sendPasswordResetEmail
-}; 
+  generatePasswordResetCode
+};

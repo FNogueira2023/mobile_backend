@@ -1,5 +1,5 @@
 const userModel = require('../models/userModel');
-const { sendRegistrationEmail, sendPasswordResetEmail } = require('../utils/emailUtils');
+const { sendEmail } = require('../utils/emailUtils');
 
 exports.getUsers = async (req, res, next) => {
   try {
@@ -32,7 +32,7 @@ exports.validateEmailAndNickname = async (req, res) => {
       });
     }
 
-    // Nickname validation (alphanumeric and underscore only)
+    // Nickname validation
     const nicknameRegex = /^[a-zA-Z0-9_]+$/;
     if (!nicknameRegex.test(nickname)) {
       return res.status(400).json({
@@ -59,8 +59,15 @@ exports.validateEmailAndNickname = async (req, res) => {
       }
     }
 
-    // Send registration email with code
-    await sendRegistrationEmail(email, nickname, validationResult.registrationCode);
+    // Send registration email
+    const emailSubject = 'Your Registration Code';
+    const emailHtml = `
+      <h2>Welcome to our service!</h2>
+      <p>Your registration code is: <strong>${validationResult.registrationCode}</strong></p>
+      <p>This code will expire at: ${validationResult.codeExpiry}</p>
+    `;
+    
+    await sendEmail(email, emailSubject, emailHtml);
 
     res.status(200).json({
       success: true,
@@ -89,7 +96,7 @@ exports.completeRegistration = async (req, res) => {
       });
     }
 
-    // Password validation (minimum 8 characters, at least one number and one letter)
+    // Password validation
     const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
     if (!passwordRegex.test(password)) {
       return res.status(400).json({
@@ -111,6 +118,15 @@ exports.completeRegistration = async (req, res) => {
         message: result.message
       });
     }
+
+    // Send welcome email
+    const welcomeSubject = 'Welcome to Our Platform!';
+    const welcomeHtml = `
+      <h2>Welcome aboard, ${nickname}!</h2>
+      <p>Your account has been successfully created.</p>
+      <p>Thank you for joining our community!</p>
+    `;
+    await sendEmail(email, welcomeSubject, welcomeHtml);
 
     res.status(201).json({
       success: true,
@@ -148,7 +164,14 @@ exports.requestPasswordReset = async (req, res) => {
     }
 
     // Send password reset email
-    await sendPasswordResetEmail(email, result.resetCode);
+    const resetSubject = 'Password Reset Request';
+    const resetHtml = `
+      <h2>Password Reset</h2>
+      <p>Your password reset code is: <strong>${result.resetCode}</strong></p>
+      <p>This code will expire at: ${result.codeExpiry}</p>
+      <p>If you didn't request this, please ignore this email.</p>
+    `;
+    await sendEmail(email, resetSubject, resetHtml);
 
     res.status(200).json({
       success: true,
@@ -194,6 +217,15 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
+    // Send password changed confirmation
+    const confirmSubject = 'Password Changed Successfully';
+    const confirmHtml = `
+      <h2>Password Update Confirmation</h2>
+      <p>Your password has been successfully updated.</p>
+      <p>If you didn't make this change, please contact our support team immediately.</p>
+    `;
+    await sendEmail(email, confirmSubject, confirmHtml);
+
     res.status(200).json({
       success: true,
       message: 'Password reset successfully'
@@ -205,4 +237,4 @@ exports.resetPassword = async (req, res) => {
       message: 'Internal server error'
     });
   }
-}; 
+};
