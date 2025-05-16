@@ -1,6 +1,83 @@
 const userModel = require('../models/userModel');
 const { sendEmail } = require('../utils/emailUtils');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
+// User login
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Basic validation
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email y contraseña son requeridos'
+      });
+    }
+
+    // Find user by email
+    const user = await userModel.getUserByEmail(email);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Credenciales inválidas'
+      });
+    }
+
+    // Check if password is correct
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Credenciales inválidas'
+      });
+    }
+
+    // Check if user is enabled
+    if (!user.enabled) {
+      return res.status(403).json({
+        success: false,
+        message: 'Esta cuenta ha sido deshabilitada. Por favor contacte al soporte.'
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: user.userId,
+        email: user.email,
+        nickname: user.nickname,
+        fullName: user.fullName
+      },
+      process.env.JWT_SECRET || 'your_jwt_secret',
+      { expiresIn: '7d' }
+    );
+
+    // Return user data (excluding sensitive info) and token
+    const userData = {
+      userId: user.userId,
+      email: user.email,
+      nickname: user.nickname,
+      fullName: user.fullName,
+      createdAt: user.createdAt
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Inicio de sesión exitoso',
+      token,
+      user: userData
+    });
+
+  } catch (error) {
+    console.error('Error in login:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error en el servidor'
+    });
+  }
+};
 
 exports.getUsers = async (req, res, next) => {
   try {

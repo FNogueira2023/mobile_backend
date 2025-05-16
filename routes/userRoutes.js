@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
 
+// User login
+router.post('/login', userController.login);
 
 //Step 0: Validate nickname
 router.post('/check-nickname', userController.checkNickname);
