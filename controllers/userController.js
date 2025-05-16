@@ -1,5 +1,6 @@
 const userModel = require('../models/userModel');
 const { sendEmail } = require('../utils/emailUtils');
+const bcrypt = require('bcrypt');
 
 exports.getUsers = async (req, res, next) => {
   try {
@@ -10,9 +11,55 @@ exports.getUsers = async (req, res, next) => {
   }
 };
 
+
+
+//Step 0 : Validate nickname
+exports.checkNickname = async (req, res) => {
+  try {
+    const { nickname } = req.body;
+    if (!nickname) {
+      return res.status(400).json({ available: false, message: 'Nickname requerido' });
+    }
+
+    // Busca si el nickname ya existe
+    const user = await userModel.getUserByNickname(nickname);
+    if (!user) {
+      return res.status(200).json({ available: true });
+    }
+
+    // Sugerencias de nicknames similares
+    const [similar] = await require('../config/db').pool.query(
+      'SELECT nickname FROM users WHERE nickname LIKE ? LIMIT 5',
+      [`${nickname}%`]
+    );
+    const suggestions = similar.map(u => u.nickname).filter(n => n !== nickname);
+
+    return res.status(200).json({
+      available: false,
+      suggestions
+    });
+  } catch (error) {
+    console.error('Error in nickname:', error);
+    res.status(500).json({ available: false, message: 'Internal server error' });
+  }
+};
+
+
+
 // Step 1: Validate email and nickname
 exports.validateEmailAndNickname = async (req, res) => {
   try {
+    console.log('Request body:', req.body);
+    console.log('Headers:', req.headers);
+    
+    if (!req.body) {
+      console.error('No request body received');
+      return res.status(400).json({
+        success: false,
+        message: 'Request body is required'
+      });
+    }
+    
     const { email, nickname } = req.body;
 
     // Basic validation
@@ -86,13 +133,13 @@ exports.validateEmailAndNickname = async (req, res) => {
 // Step 2: Complete registration
 exports.completeRegistration = async (req, res) => {
   try {
-    const { email, nickname, password, registrationCode } = req.body;
+    const { fullName, password, registrationCode } = req.body;
 
     // Validate required fields
-    if (!email || !nickname || !password || !registrationCode) {
+    if (!fullName || !password || !registrationCode) {
       return res.status(400).json({
         success: false,
-        message: 'All fields are required'
+        message: 'Todos los campos son requeridos: nombre completo, contraseña y código de registro'
       });
     }
 
@@ -105,33 +152,50 @@ exports.completeRegistration = async (req, res) => {
       });
     }
 
-    const result = await userModel.completeRegistration({
-      email,
-      nickname,
-      password,
-      registrationCode
-    });
+    // Get the temporary registration data using the registration code
+    const [tempReg] = await require('../config/db').pool.query(
+      'SELECT * FROM temp_registrations WHERE registrationCode = ? AND codeExpiry > NOW()',
+      [registrationCode]
+    );
 
-    if (!result.success) {
+    if (!tempReg.length) {
       return res.status(400).json({
         success: false,
-        message: result.message
+        message: 'Código de registro inválido o expirado'
       });
     }
 
+    const { email, nickname } = tempReg[0];
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+    
+    // Insert new user
+    const [result] = await require('../config/db').pool.query(
+      `INSERT INTO users (email, nickname, fullName, passwordHash, enabled, createdAt, updatedAt) 
+       VALUES (?, ?, ?, ?, true, NOW(), NOW())`,
+      [email, nickname, fullName, passwordHash]
+    );
+
+    // Delete temporary registration
+    await require('../config/db').pool.query(
+      'DELETE FROM temp_registrations WHERE registrationCode = ?',
+      [registrationCode]
+    );
+
     // Send welcome email
-    const welcomeSubject = 'Bienvenido a la plataforma!';
+    const welcomeSubject = '¡Bienvenido a la plataforma!';
     const welcomeHtml = `
-      <h2>Bienvenido, ${nickname}!</h2>
-      <p>Tu cuenta ha sido creada.</p>
-      <p>Gracias por unirte a la comunidad!</p>
+      <h2>¡Bienvenido/a, ${fullName}!</h2>
+      <p>Tu cuenta ha sido creada exitosamente.</p>
+      <p>¡Gracias por unirte a nuestra comunidad!</p>
     `;
     await sendEmail(email, welcomeSubject, welcomeHtml);
 
     res.status(201).json({
       success: true,
-      message: 'Registration completed successfully',
-      userId: result.userId
+      message: 'Registro completado exitosamente',
+      userId: result.insertId
     });
   } catch (error) {
     console.error('Error in completeRegistration:', error);

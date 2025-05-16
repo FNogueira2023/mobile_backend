@@ -182,11 +182,22 @@ async function getUserById(userId) {
   }
 }
 
+// Get user by nickname
+async function getUserByNickname(nickname) {
+  try {
+    const [users] = await pool.query('SELECT * FROM users WHERE nickname = ?', [nickname]);
+    return users[0];
+  } catch (error) {
+    throw error;
+  }
+}
+
 module.exports = {
   validateEmailAndNickname,
   completeRegistration,
   requestPasswordReset,
   resetPassword,
   getUserByEmail,
-  getUserById
-}; 
+  getUserById,
+  getUserByNickname
+};
