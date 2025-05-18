@@ -3,11 +3,24 @@ const { pool } = require('../config/db');
 // Create student record
 async function createStudent(studentData) {
   try {
-    const { userId, cardNumber, idFront, idBack, process } = studentData;
+    const { userId, cardNumber, idFront, idBack, process = 'pending' } = studentData;
+    
+    // Verificar si el usuario ya es estudiante
+    const [existing] = await pool.query(
+      'SELECT studentId FROM students WHERE userId = ?',
+      [userId]
+    );
+    
+    if (existing.length > 0) {
+      const error = new Error('El usuario ya es estudiante');
+      error.code = 'DUPLICATE_STUDENT';
+      throw error;
+    }
     
     const [result] = await pool.query(
-      `INSERT INTO students (userId, cardNumber, idFront, idBack, process, accountBalance) 
-       VALUES (?, ?, ?, ?, ?, 0)`,
+      `INSERT INTO students 
+       (userId, cardNumber, idFront, idBack, process, accountBalance, createdAt, updatedAt) 
+       VALUES (?, ?, ?, ?, ?, 0, NOW(), NOW())`,
       [userId, cardNumber, idFront, idBack, process]
     );
 
@@ -16,6 +29,7 @@ async function createStudent(studentData) {
       studentId: result.insertId
     };
   } catch (error) {
+    console.error('Error en createStudent:', error);
     throw error;
   }
 }
@@ -24,11 +38,15 @@ async function createStudent(studentData) {
 async function getStudentByUserId(userId) {
   try {
     const [students] = await pool.query(
-      'SELECT * FROM students WHERE userId = ?',
+      `SELECT s.*, u.email, u.nickname 
+       FROM students s
+       JOIN users u ON s.userId = u.userId
+       WHERE s.userId = ?`,
       [userId]
     );
-    return students[0];
+    return students[0] || null;
   } catch (error) {
+    console.error('Error en getStudentByUserId:', error);
     throw error;
   }
 }
@@ -59,12 +77,23 @@ async function updateAccountBalance(studentId, amount) {
   }
 }
 
-// Get user by userId
+// Get user by userId (alias for getStudentByUserId for backward compatibility)
 async function getUserById(userId) {
+  return getStudentByUserId(userId);
+}
+
+// Get all students (for admin)
+async function getAllStudents() {
   try {
-    const [users] = await pool.query('SELECT * FROM students WHERE userId = ?', [userId]);
-    return users[0];
+    const [students] = await pool.query(
+      `SELECT s.*, u.email, u.nickname, u.createdAt as userCreatedAt
+       FROM students s
+       JOIN users u ON s.userId = u.userId
+       ORDER BY s.createdAt DESC`
+    );
+    return students;
   } catch (error) {
+    console.error('Error en getAllStudents:', error);
     throw error;
   }
 }
