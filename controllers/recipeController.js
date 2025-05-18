@@ -93,7 +93,8 @@ exports.createRecipe = async (req, res) => {
       servings,
       difficulty,
       isPublic = false,
-      ingredients
+      ingredients,
+      action = 'create' // 'create', 'replace', or 'edit'
     } = req.body;
 
     // Validate required fields
@@ -101,6 +102,25 @@ exports.createRecipe = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Faltan campos requeridos'
+      });
+    }
+
+    // Check for existing recipe with same name
+    const [existingRecipes] = await pool.query(
+      'SELECT recipeId FROM recipes WHERE userId = ? AND LOWER(title) = LOWER(?)',
+      [userId, title]
+    );
+
+    // If recipe exists and no action specified, return with options
+    if (existingRecipes.length > 0 && action === 'create') {
+      return res.status(409).json({
+        success: false,
+        message: 'Ya existe una receta con este nombre',
+        existingRecipeId: existingRecipes[0].recipeId,
+        options: {
+          replace: 'Reemplazar la receta existente',
+          edit: 'Editar la receta existente'
+        }
       });
     }
 
@@ -171,17 +191,52 @@ exports.createRecipe = async (req, res) => {
     await connection.beginTransaction();
 
     try {
-      // Insert the recipe
-      const [recipeResult] = await connection.query(
-        `INSERT INTO recipes (
-          userId, title, description, instructions, prepTime, 
-          cookTime, servings, difficulty, isPublic, isApproved,
-          viewCount, imageUrl, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, false, 0, ?, NOW(), NOW())`,
-        [userId, title, description, instructions, prepTime, cookTime, servings, difficulty, isPublic, imageUrl]
-      );
+      let recipeId;
 
-      const recipeId = recipeResult.insertId;
+      if (existingRecipes.length > 0) {
+        // If replacing or editing existing recipe
+        recipeId = existingRecipes[0].recipeId;
+
+        if (action === 'replace') {
+          // Delete existing recipe's ingredients
+          await connection.query('DELETE FROM usedIngredients WHERE recipeId = ?', [recipeId]);
+          
+          // Delete the old image if exists
+          const [oldRecipe] = await connection.query('SELECT imageUrl FROM recipes WHERE recipeId = ?', [recipeId]);
+          if (oldRecipe[0]?.imageUrl) {
+            const oldImagePath = path.join(__dirname, '..', oldRecipe[0].imageUrl);
+            try {
+              await fs.promises.unlink(oldImagePath);
+            } catch (error) {
+              console.error('Error deleting old recipe image:', error);
+            }
+          }
+        }
+
+        // Update the recipe
+        await connection.query(
+          `UPDATE recipes SET 
+            title = ?, description = ?, instructions = ?, 
+            prepTime = ?, cookTime = ?, servings = ?, 
+            difficulty = ?, isPublic = ?, imageUrl = ?,
+            updatedAt = NOW()
+           WHERE recipeId = ?`,
+          [title, description, instructions, prepTime, cookTime, 
+           servings, difficulty, isPublic, imageUrl, recipeId]
+        );
+      } else {
+        // Create new recipe
+        const [recipeResult] = await connection.query(
+          `INSERT INTO recipes (
+            userId, title, description, instructions, prepTime, 
+            cookTime, servings, difficulty, isPublic, isApproved,
+            viewCount, imageUrl, createdAt, updatedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, false, 0, ?, NOW(), NOW())`,
+          [userId, title, description, instructions, prepTime, 
+           cookTime, servings, difficulty, isPublic, imageUrl]
+        );
+        recipeId = recipeResult.insertId;
+      }
 
       // Process each ingredient
       for (const ing of parsedIngredients) {
@@ -233,7 +288,7 @@ exports.createRecipe = async (req, res) => {
 
       res.status(201).json({
         success: true,
-        message: 'Receta creada exitosamente',
+        message: action === 'create' ? 'Receta creada exitosamente' : 'Receta actualizada exitosamente',
         recipeId: recipeId
       });
 
@@ -444,6 +499,48 @@ exports.deleteRecipe = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error deleting recipe',
+      error: error.message
+    });
+  }
+};
+
+// Get all recipes from a user
+exports.getUserRecipes = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Get all recipes from the user
+    const [recipes] = await pool.query(
+      `SELECT r.*
+       FROM recipes r
+       WHERE r.userId = ?
+       ORDER BY r.createdAt DESC`,
+      [userId]
+    );
+
+    // For each recipe, get its ingredients
+    for (let recipe of recipes) {
+      const [ingredients] = await pool.query(
+        `SELECT ui.*, i.name as ingredientName, u.name as unitName, u.abbreviation as unitAbbreviation
+         FROM usedIngredients ui
+         JOIN ingredients i ON ui.ingredientId = i.ingredientId
+         JOIN units u ON ui.unitId = u.unitId
+         WHERE ui.recipeId = ?`,
+        [recipe.recipeId]
+      );
+      recipe.ingredients = ingredients;
+    }
+
+    res.json({
+      success: true,
+      recipes: recipes
+    });
+
+  } catch (error) {
+    console.error('Error getting user recipes:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener las recetas del usuario',
       error: error.message
     });
   }

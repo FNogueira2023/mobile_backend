@@ -11,6 +11,9 @@ router.post('/',
   recipeController.createRecipe
 );
 
+// Get all recipes from a user
+router.get('/user/:userId', recipeController.getUserRecipes);
+
 // Get recipe by ID
 router.get('/:recipeId', recipeController.getRecipeById);
 
