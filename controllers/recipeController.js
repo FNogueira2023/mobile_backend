@@ -93,15 +93,25 @@ exports.createRecipe = async (req, res) => {
       servings,
       difficulty,
       isPublic = false,
+      typeId,
       ingredients,
       action = 'create' // 'create', 'replace', or 'edit'
     } = req.body;
 
     // Validate required fields
-    if (!title || !description || !instructions || !prepTime || !cookTime || !servings || !difficulty) {
+    if (!title || !description || !instructions || !prepTime || !cookTime || !servings || !difficulty || !typeId) {
       return res.status(400).json({
         success: false,
         message: 'Faltan campos requeridos'
+      });
+    }
+
+    // Validate typeId exists
+    const [typeExists] = await pool.query('SELECT typeId FROM recipe_types WHERE typeId = ?', [typeId]);
+    if (!typeExists.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'El tipo de receta especificado no existe'
       });
     }
 
@@ -218,24 +228,27 @@ exports.createRecipe = async (req, res) => {
           `UPDATE recipes SET 
             title = ?, description = ?, instructions = ?, 
             prepTime = ?, cookTime = ?, servings = ?, 
-            difficulty = ?, isPublic = ?, imageUrl = ?,
+            difficulty = ?, isPublic = ?, typeId = ?, imageUrl = ?,
             updatedAt = NOW()
            WHERE recipeId = ?`,
           [title, description, instructions, prepTime, cookTime, 
-           servings, difficulty, isPublic, imageUrl, recipeId]
+           servings, difficulty, isPublic, typeId, imageUrl, recipeId]
         );
       } else {
-        // Create new recipe
-        const [recipeResult] = await connection.query(
-          `INSERT INTO recipes (
-            userId, title, description, instructions, prepTime, 
-            cookTime, servings, difficulty, isPublic, isApproved,
-            viewCount, imageUrl, createdAt, updatedAt
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, false, 0, ?, NOW(), NOW())`,
-          [userId, title, description, instructions, prepTime, 
-           cookTime, servings, difficulty, isPublic, imageUrl]
-        );
-        recipeId = recipeResult.insertId;
+        // Create new recipe using the model
+        recipeId = await recipeModel.createRecipe({
+          userId,
+          title,
+          description,
+          instructions,
+          prepTime,
+          cookTime,
+          servings,
+          difficulty,
+          isPublic,
+          typeId,
+          imageUrl
+        });
       }
 
       // Process each ingredient
@@ -541,6 +554,46 @@ exports.getUserRecipes = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error al obtener las recetas del usuario',
+      error: error.message
+    });
+  }
+};
+
+// Search recipes
+exports.searchRecipes = async (req, res) => {
+  try {
+    const filters = {
+      name: req.query.name,
+      typeId: req.query.typeId ? parseInt(req.query.typeId) : null,
+      includeIngredients: req.query.includeIngredients ? req.query.includeIngredients.split(',') : [],
+      excludeIngredients: req.query.excludeIngredients ? req.query.excludeIngredients.split(',') : []
+    };
+
+    const recipes = await recipeModel.searchRecipes(filters);
+
+    // For each recipe, get its ingredients
+    for (let recipe of recipes) {
+      const [ingredients] = await pool.query(
+        `SELECT ui.*, i.name as ingredientName, u.name as unitName, u.abbreviation as unitAbbreviation
+         FROM usedIngredients ui
+         JOIN ingredients i ON ui.ingredientId = i.ingredientId
+         JOIN units u ON ui.unitId = u.unitId
+         WHERE ui.recipeId = ?`,
+        [recipe.recipeId]
+      );
+      recipe.ingredients = ingredients;
+    }
+
+    res.json({
+      success: true,
+      recipes: recipes
+    });
+
+  } catch (error) {
+    console.error('Error searching recipes:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error searching recipes',
       error: error.message
     });
   }

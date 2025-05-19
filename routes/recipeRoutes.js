@@ -3,6 +3,9 @@ const router = express.Router();
 const recipeController = require('../controllers/recipeController');
 const { authenticateToken } = require('../middlewares/authMiddleware');
 
+// Search recipes
+router.get('/search', recipeController.searchRecipes);
+
 // Create a new recipe (requires authentication)
 router.post('/', 
   authenticateToken, 
