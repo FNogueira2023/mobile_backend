@@ -95,7 +95,7 @@ async function createRecipe(recipeData) {
     userId,
     title,
     description,
-    instructions,
+    steps,
     prepTime,
     cookTime,
     servings,
@@ -105,17 +105,69 @@ async function createRecipe(recipeData) {
     imageUrl
   } = recipeData;
 
-  const [result] = await pool.query(
-    `INSERT INTO recipes (
-      userId, title, description, instructions, prepTime, 
-      cookTime, servings, difficulty, isPublic, typeId,
-      isApproved, viewCount, imageUrl, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, 0, ?, NOW(), NOW())`,
-    [userId, title, description, instructions, prepTime, 
-     cookTime, servings, difficulty, isPublic, typeId, imageUrl]
-  );
+  const connection = await pool.getConnection();
+  await connection.beginTransaction();
 
-  return result.insertId;
+  try {
+    // Insert recipe
+    const [result] = await connection.query(
+      `INSERT INTO recipes (
+        userId, title, description, prepTime, 
+        cookTime, servings, difficulty, isPublic, typeId,
+        isApproved, viewCount, imageUrl, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, false, 0, ?, NOW(), NOW())`,
+      [userId, title, description, prepTime, 
+       cookTime, servings, difficulty, isPublic, typeId, imageUrl]
+    );
+
+    const recipeId = result.insertId;
+
+    // Insert steps
+    if (steps && steps.length > 0) {
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        const [stepResult] = await connection.query(
+          `INSERT INTO step (recipeId, numberStep, text) 
+           VALUES (?, ?, ?)`,
+          [recipeId, i + 1, step.text]
+        );
+
+        // If step has photo, insert it
+        if (step.photo) {
+          await connection.query(
+            `INSERT INTO photo (idStep, extension, url) 
+             VALUES (?, ?, ?)`,
+            [stepResult.insertId, step.photo.extension, step.photo.url]
+          );
+        }
+      }
+    }
+
+    await connection.commit();
+    return recipeId;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
-module.exports = { getAllRecipes, searchRecipes, createRecipe }; 
+async function getRecipeSteps(recipeId) {
+  const [steps] = await pool.query(
+    `SELECT s.*, p.extension, p.url as photoUrl
+     FROM step s
+     LEFT JOIN photo p ON s.idStep = p.idStep
+     WHERE s.recipeId = ?
+     ORDER BY s.numberStep`,
+    [recipeId]
+  );
+  return steps;
+}
+
+module.exports = { 
+  getAllRecipes, 
+  searchRecipes, 
+  createRecipe,
+  getRecipeSteps
+}; 

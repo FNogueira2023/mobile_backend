@@ -4,15 +4,21 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure upload directory exists
-const uploadDir = path.join(__dirname, '..', 'uploads', 'recipes');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// Ensure upload directories exist
+const recipeUploadDir = path.join(__dirname, '..', 'uploads', 'recipes');
+const stepUploadDir = path.join(__dirname, '..', 'uploads', 'steps');
 
-// Configure multer for file uploads
+[recipeUploadDir, stepUploadDir].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
+
+// Configure multer storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
+    // Determine which directory to use based on the field name
+    const uploadDir = file.fieldname === 'recipeImage' ? recipeUploadDir : stepUploadDir;
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
@@ -20,7 +26,8 @@ const storage = multer.diskStorage({
     const ext = path.extname(file.originalname);
     // Create unique filename
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'recipe-' + uniqueSuffix + ext);
+    const prefix = file.fieldname === 'recipeImage' ? 'recipe-' : 'step-';
+    cb(null, prefix + uniqueSuffix + ext);
   }
 });
 
@@ -33,14 +40,18 @@ const fileFilter = (req, file, cb) => {
   cb(null, true);
 };
 
-// Configure multer
+// Configure multer for multiple file uploads
 exports.upload = multer({ 
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB max file size
+    fileSize: 5 * 1024 * 1024, // 5MB max file size
+    files: 10 // Maximum 10 files (1 recipe image + 9 step images)
   }
-}).single('imageUrl');
+}).fields([
+  { name: 'recipeImage', maxCount: 1 },
+  { name: 'stepImages', maxCount: 9 }
+]);
 
 // Error handling middleware for multer
 exports.handleMulterError = (err, req, res, next) => {
@@ -49,6 +60,12 @@ exports.handleMulterError = (err, req, res, next) => {
       return res.status(400).json({
         success: false,
         message: 'File too large. Maximum size is 5MB'
+      });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({
+        success: false,
+        message: 'Too many files. Maximum is 10 files (1 recipe image + 9 step images)'
       });
     }
     return res.status(400).json({
@@ -83,11 +100,21 @@ const isValidAmount = (amount) => {
 // Create a new recipe
 exports.createRecipe = async (req, res) => {
   try {
+    let recipeData;
+    
+    // Intentar parsear los datos de la receta
+    try {
+      recipeData = JSON.parse(req.body.recipeData);
+    } catch (error) {
+      // Si no hay recipeData en el body, intentar usar el body directamente
+      recipeData = req.body;
+    }
+
     const {
       userId,
       title,
       description,
-      instructions,
+      steps,
       prepTime,
       cookTime,
       servings,
@@ -95,14 +122,15 @@ exports.createRecipe = async (req, res) => {
       isPublic = false,
       typeId,
       ingredients,
-      action = 'create' // 'create', 'replace', or 'edit'
-    } = req.body;
+      action = 'create' // Agregamos action con valor por defecto
+    } = recipeData;
 
     // Validate required fields
-    if (!title || !description || !instructions || !prepTime || !cookTime || !servings || !difficulty || !typeId) {
+    if (!title || !description || !steps || !prepTime || !cookTime || !servings || !difficulty || !typeId) {
       return res.status(400).json({
         success: false,
-        message: 'Faltan campos requeridos'
+        message: 'Faltan campos requeridos',
+        receivedData: recipeData
       });
     }
 
@@ -134,17 +162,35 @@ exports.createRecipe = async (req, res) => {
       });
     }
 
+    // Process uploaded files
+    const recipeImage = req.files?.recipeImage?.[0];
+    const stepImages = req.files?.stepImages || [];
+
+    // Get the uploaded image path if exists
+    const imageUrl = recipeImage ? `/uploads/recipes/${recipeImage.filename}` : null;
+
+    // Match step images with steps
+    if (stepImages.length > 0) {
+      // Assuming step images are uploaded in order
+      stepImages.forEach((file, index) => {
+        if (steps[index]) {
+          steps[index].photo = {
+            extension: path.extname(file.originalname).substring(1),
+            url: `/uploads/steps/${file.filename}`
+          };
+        }
+      });
+    }
+
     // Parse and validate ingredients
     let parsedIngredients = [];
     try {
-      // If ingredients is a string (from form-data), parse it
       if (typeof ingredients === 'string') {
         parsedIngredients = JSON.parse(ingredients);
       } else if (Array.isArray(ingredients)) {
         parsedIngredients = ingredients;
       }
 
-      // Validate ingredients structure
       if (!Array.isArray(parsedIngredients)) {
         return res.status(400).json({
           success: false,
@@ -152,11 +198,9 @@ exports.createRecipe = async (req, res) => {
         });
       }
 
-      // Validate each ingredient
       for (let i = 0; i < parsedIngredients.length; i++) {
         const ing = parsedIngredients[i];
         
-        // Check for missing fields
         const missingFields = [];
         if (!ing.name) missingFields.push('nombre');
         if (!ing.amount) missingFields.push('cantidad');
@@ -169,7 +213,6 @@ exports.createRecipe = async (req, res) => {
           });
         }
 
-        // Validate amount
         if (!isValidAmount(ing.amount)) {
           return res.status(400).json({
             success: false,
@@ -177,7 +220,6 @@ exports.createRecipe = async (req, res) => {
           });
         }
 
-        // Validate unit format
         if (typeof ing.unit !== 'string' || ing.unit.trim() === '') {
           return res.status(400).json({
             success: false,
@@ -193,9 +235,6 @@ exports.createRecipe = async (req, res) => {
       });
     }
 
-    // Get the uploaded image path if exists
-    const imageUrl = req.file ? `/uploads/recipes/${req.file.filename}` : null;
-
     // Start a transaction
     const connection = await pool.getConnection();
     await connection.beginTransaction();
@@ -208,10 +247,31 @@ exports.createRecipe = async (req, res) => {
         recipeId = existingRecipes[0].recipeId;
 
         if (action === 'replace') {
-          // Delete existing recipe's ingredients
+          // Delete existing recipe's ingredients and steps
           await connection.query('DELETE FROM usedIngredients WHERE recipeId = ?', [recipeId]);
           
-          // Delete the old image if exists
+          // Get existing steps to delete their photos
+          const [existingSteps] = await connection.query(
+            'SELECT s.idStep, p.url FROM step s LEFT JOIN photo p ON s.idStep = p.idStep WHERE s.recipeId = ?',
+            [recipeId]
+          );
+          
+          // Delete steps and their photos
+          await connection.query('DELETE FROM step WHERE recipeId = ?', [recipeId]);
+          
+          // Delete old photos
+          for (const step of existingSteps) {
+            if (step.url) {
+              const photoPath = path.join(__dirname, '..', step.url);
+              try {
+                await fs.promises.unlink(photoPath);
+              } catch (error) {
+                console.error('Error deleting old step photo:', error);
+              }
+            }
+          }
+          
+          // Delete the old recipe image if exists
           const [oldRecipe] = await connection.query('SELECT imageUrl FROM recipes WHERE recipeId = ?', [recipeId]);
           if (oldRecipe[0]?.imageUrl) {
             const oldImagePath = path.join(__dirname, '..', oldRecipe[0].imageUrl);
@@ -226,21 +286,21 @@ exports.createRecipe = async (req, res) => {
         // Update the recipe
         await connection.query(
           `UPDATE recipes SET 
-            title = ?, description = ?, instructions = ?, 
+            title = ?, description = ?, 
             prepTime = ?, cookTime = ?, servings = ?, 
             difficulty = ?, isPublic = ?, typeId = ?, imageUrl = ?,
             updatedAt = NOW()
            WHERE recipeId = ?`,
-          [title, description, instructions, prepTime, cookTime, 
+          [title, description, prepTime, cookTime, 
            servings, difficulty, isPublic, typeId, imageUrl, recipeId]
         );
       } else {
-        // Create new recipe using the model
+        // Create new recipe
         recipeId = await recipeModel.createRecipe({
           userId,
           title,
           description,
-          instructions,
+          steps,
           prepTime,
           cookTime,
           servings,
@@ -270,13 +330,11 @@ exports.createRecipe = async (req, res) => {
         let ingredientId;
 
         if (existingIngredients.length > 0) {
-          // Use existing ingredient
           ingredientId = existingIngredients[0].ingredientId;
         } else {
-          // Insert new ingredient
           const [newIngredient] = await connection.query(
             'INSERT INTO ingredients (name, createdAt, updatedAt) VALUES (?, NOW(), NOW())',
-            [ing.name] // Use original name for display
+            [ing.name]
           );
           ingredientId = newIngredient.insertId;
         }
@@ -344,19 +402,23 @@ exports.getRecipeById = async (req, res) => {
 
     // Get ingredients
     const [ingredients] = await pool.query(
-      `SELECT ri.*, i.name as ingredientName, u.name as unitName
-       FROM recipeIngredients ri
-       JOIN ingredients i ON ri.ingredientId = i.ingredientId
-       JOIN units u ON ri.unitId = u.unitId
-       WHERE ri.recipeId = ?`,
+      `SELECT ui.*, i.name as ingredientName, u.name as unitName
+       FROM usedIngredients ui
+       JOIN ingredients i ON ui.ingredientId = i.ingredientId
+       JOIN units u ON ui.unitId = u.unitId
+       WHERE ui.recipeId = ?`,
       [recipeId]
     );
+
+    // Get steps with photos
+    const steps = await recipeModel.getRecipeSteps(recipeId);
 
     res.json({
       success: true,
       recipe: {
         ...recipe[0],
-        ingredients
+        ingredients,
+        steps
       }
     });
 
@@ -377,7 +439,7 @@ exports.updateRecipe = async (req, res) => {
     const {
       title,
       description,
-      instructions,
+      steps,
       prepTime,
       cookTime,
       servings,
@@ -395,11 +457,11 @@ exports.updateRecipe = async (req, res) => {
 
       // Build the update query dynamically based on whether there's a new image
       let updateQuery = `UPDATE recipes 
-         SET title = ?, description = ?, instructions = ?, 
+         SET title = ?, description = ?, 
              prepTime = ?, cookTime = ?, servings = ?, 
              difficulty = ?, isPublic = ?, updatedAt = NOW()`;
       
-      let queryParams = [title, description, instructions, prepTime, cookTime, 
+      let queryParams = [title, description, prepTime, cookTime, 
                         servings, difficulty, isPublic];
 
       if (imageUrl) {
@@ -417,24 +479,60 @@ exports.updateRecipe = async (req, res) => {
       if (ingredients) {
         // Delete existing ingredients
         await connection.query(
-          'DELETE FROM recipeIngredients WHERE recipeId = ?',
+          'DELETE FROM usedIngredients WHERE recipeId = ?',
           [recipeId]
         );
 
         // Insert new ingredients
         if (ingredients.length > 0) {
-          const ingredientValues = ingredients.map(ing => [
-            recipeId,
-            ing.ingredientId,
-            ing.quantity,
-            ing.unitId
-          ]);
+          for (const ing of ingredients) {
+            // Validate required fields
+            if (!ing.name || !ing.amount || !ing.unit) {
+              throw new Error(`Missing required fields for ingredient: name, amount, and unit are required`);
+            }
 
-          await connection.query(
-            `INSERT INTO recipeIngredients (recipeId, ingredientId, quantity, unitId)
-             VALUES ?`,
-            [ingredientValues]
-          );
+            // Normalize ingredient name
+            const normalizedName = normalizeIngredientName(ing.name);
+            
+            // Check if unit is valid and get its ID
+            const unitId = await isValidUnit(connection, ing.unit);
+            if (!unitId) {
+              throw new Error(`Invalid unit abbreviation "${ing.unit}" for ingredient "${ing.name}". Please use a valid abbreviation.`);
+            }
+
+            // Check if ingredient exists
+            let [existingIngredients] = await connection.query(
+              'SELECT ingredientId FROM ingredients WHERE LOWER(name) = ?',
+              [normalizedName]
+            );
+
+            let ingredientId;
+
+            if (existingIngredients.length > 0) {
+              ingredientId = existingIngredients[0].ingredientId;
+            } else {
+              const [newIngredient] = await connection.query(
+                'INSERT INTO ingredients (name, createdAt, updatedAt) VALUES (?, NOW(), NOW())',
+                [ing.name]
+              );
+              ingredientId = newIngredient.insertId;
+            }
+
+            // Insert into usedIngredients
+            await connection.query(
+              `INSERT INTO usedIngredients (
+                recipeId, ingredientId, amount, unitId, 
+                isOptional, createdAt, updatedAt
+              ) VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+              [
+                recipeId,
+                ingredientId,
+                ing.amount,
+                unitId,
+                ing.isOptional || false
+              ]
+            );
+          }
         }
       }
 
@@ -478,7 +576,7 @@ exports.deleteRecipe = async (req, res) => {
       );
 
       // Delete related records first
-      await connection.query('DELETE FROM recipeIngredients WHERE recipeId = ?', [recipeId]);
+      await connection.query('DELETE FROM usedIngredients WHERE recipeId = ?', [recipeId]);
       
       // Delete the recipe
       await connection.query('DELETE FROM recipes WHERE recipeId = ?', [recipeId]);
