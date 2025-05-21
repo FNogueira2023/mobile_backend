@@ -567,13 +567,16 @@ exports.searchRecipes = async (req, res) => {
       typeId: req.query.typeId ? parseInt(req.query.typeId) : null,
       includeIngredients: req.query.includeIngredients ? req.query.includeIngredients.split(',') : [],
       excludeIngredients: req.query.excludeIngredients ? req.query.excludeIngredients.split(',') : [],
-      authorName: req.query.authorName // Add author name filter
+      authorName: req.query.authorName,
+      sort: req.query.sort,
+      page: req.query.page,
+      limit: req.query.limit
     };
 
-    const recipes = await recipeModel.searchRecipes(filters);
+    const result = await recipeModel.searchRecipes(filters);
 
     // For each recipe, get its ingredients
-    for (let recipe of recipes) {
+    for (let recipe of result.recipes) {
       const [ingredients] = await pool.query(
         `SELECT ui.*, i.name as ingredientName, u.name as unitName, u.abbreviation as unitAbbreviation
          FROM usedIngredients ui
@@ -587,7 +590,8 @@ exports.searchRecipes = async (req, res) => {
 
     res.json({
       success: true,
-      recipes: recipes
+      recipes: result.recipes,
+      pagination: result.pagination
     });
 
   } catch (error) {

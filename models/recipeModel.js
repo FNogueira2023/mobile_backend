@@ -52,10 +52,42 @@ async function searchRecipes(filters) {
     params.push(...filters.excludeIngredients.map(ing => `%${ing}%`));
   }
 
-  query += ' ORDER BY r.createdAt DESC';
+  // Add sorting
+  const validSortFields = {
+    'newest': 'r.createdAt DESC',
+    'oldest': 'r.createdAt ASC',
+    'name_asc': 'r.title ASC',
+    'name_desc': 'r.title DESC'
+  };
+
+  const sortField = filters.sort || 'newest';
+  query += ` ORDER BY ${validSortFields[sortField] || validSortFields['newest']}`;
+
+  // Add pagination
+  const page = parseInt(filters.page) || 1;
+  const limit = parseInt(filters.limit) || 10;
+  const offset = (page - 1) * limit;
+
+  // Get total count for pagination
+  const countQuery = query.replace('DISTINCT r.*, u.nickname as authorName, rt.description as typeDescription', 'COUNT(DISTINCT r.recipeId) as total');
+  const [countResult] = await pool.query(countQuery, params);
+  const total = countResult[0].total;
+
+  // Add limit and offset to main query
+  query += ' LIMIT ? OFFSET ?';
+  params.push(limit, offset);
 
   const [rows] = await pool.query(query, params);
-  return rows;
+  
+  return {
+    recipes: rows,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    }
+  };
 }
 
 async function createRecipe(recipeData) {
