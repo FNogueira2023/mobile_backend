@@ -24,6 +24,11 @@ async function searchRecipes(filters) {
     params.push(`%${filters.name}%`);
   }
 
+  if (filters.authorName) {
+    query += ' AND LOWER(u.nickname) LIKE LOWER(?)';
+    params.push(`%${filters.authorName}%`);
+  }
+
   if (filters.typeId) {
     query += ' AND r.typeId = ?';
     params.push(filters.typeId);
@@ -31,13 +36,19 @@ async function searchRecipes(filters) {
 
   if (filters.includeIngredients && filters.includeIngredients.length > 0) {
     const conditions = filters.includeIngredients.map(() => 'LOWER(i.name) LIKE LOWER(?)');
-    query += ' AND ' + conditions.join(' AND ');
+    query += ' AND (' + conditions.join(' OR ') + ')';
     params.push(...filters.includeIngredients.map(ing => `%${ing}%`));
   }
 
   if (filters.excludeIngredients && filters.excludeIngredients.length > 0) {
-    const conditions = filters.excludeIngredients.map(() => 'LOWER(i2.name) NOT LIKE LOWER(?)');
-    query += ' AND r.recipeId NOT IN (SELECT recipeId FROM usedIngredients ui2 JOIN ingredients i2 ON ui2.ingredientId = i2.ingredientId WHERE ' + conditions.join(' AND ') + ')';
+    query += ' AND NOT EXISTS (';
+    query += '   SELECT 1 FROM usedIngredients ui2 ';
+    query += '   JOIN ingredients i2 ON ui2.ingredientId = i2.ingredientId ';
+    query += '   WHERE ui2.recipeId = r.recipeId AND (';
+    const conditions = filters.excludeIngredients.map(() => 'LOWER(i2.name) LIKE LOWER(?)');
+    query += conditions.join(' OR ');
+    query += '   )';
+    query += ' )';
     params.push(...filters.excludeIngredients.map(ing => `%${ing}%`));
   }
 

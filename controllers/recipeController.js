@@ -566,7 +566,8 @@ exports.searchRecipes = async (req, res) => {
       name: req.query.name,
       typeId: req.query.typeId ? parseInt(req.query.typeId) : null,
       includeIngredients: req.query.includeIngredients ? req.query.includeIngredients.split(',') : [],
-      excludeIngredients: req.query.excludeIngredients ? req.query.excludeIngredients.split(',') : []
+      excludeIngredients: req.query.excludeIngredients ? req.query.excludeIngredients.split(',') : [],
+      authorName: req.query.authorName // Add author name filter
     };
 
     const recipes = await recipeModel.searchRecipes(filters);
