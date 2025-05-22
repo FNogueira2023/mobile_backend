@@ -8,8 +8,10 @@ const fs = require('fs');
 const recipeUploadDir = path.join(__dirname, '..', 'uploads', 'recipes');
 const stepUploadDir = path.join(__dirname, '..', 'uploads', 'steps');
 
+// Crear directorios si no existen
 [recipeUploadDir, stepUploadDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
+    console.log(`Creating directory: ${dir}`);
     fs.mkdirSync(dir, { recursive: true });
   }
 });
@@ -19,6 +21,7 @@ const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     // Determine which directory to use based on the field name
     const uploadDir = file.fieldname === 'recipeImage' ? recipeUploadDir : stepUploadDir;
+    console.log(`DEBUG - Saving file to directory: ${uploadDir}`);
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
@@ -27,7 +30,9 @@ const storage = multer.diskStorage({
     // Create unique filename
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const prefix = file.fieldname === 'recipeImage' ? 'recipe-' : 'step-';
-    cb(null, prefix + uniqueSuffix + ext);
+    const filename = prefix + uniqueSuffix + ext;
+    console.log(`DEBUG - Generated filename: ${filename}`);
+    cb(null, filename);
   }
 });
 
@@ -100,14 +105,21 @@ const isValidAmount = (amount) => {
 // Create a new recipe
 exports.createRecipe = async (req, res) => {
   try {
+    console.log('DEBUG - Request headers:', req.headers);
+    console.log('DEBUG - Request body:', req.body);
+    console.log('DEBUG - Request files:', req.files);
+
     let recipeData;
     
     // Intentar parsear los datos de la receta
     try {
       recipeData = JSON.parse(req.body.recipeData);
+      console.log('DEBUG - Parsed recipeData:', recipeData);
     } catch (error) {
+      console.log('DEBUG - Error parsing recipeData:', error);
       // Si no hay recipeData en el body, intentar usar el body directamente
       recipeData = req.body;
+      console.log('DEBUG - Using raw body as recipeData:', recipeData);
     }
 
     const {
@@ -122,7 +134,7 @@ exports.createRecipe = async (req, res) => {
       isPublic = false,
       typeId,
       ingredients,
-      action = 'create' // Agregamos action con valor por defecto
+      action = 'create'
     } = recipeData;
 
     // Validate required fields
@@ -166,21 +178,72 @@ exports.createRecipe = async (req, res) => {
     const recipeImage = req.files?.recipeImage?.[0];
     const stepImages = req.files?.stepImages || [];
 
+    console.log('DEBUG - Received files:', {
+      recipeImage: recipeImage ? {
+        filename: recipeImage.filename,
+        originalname: recipeImage.originalname,
+        path: recipeImage.path,
+        mimetype: recipeImage.mimetype,
+        size: recipeImage.size
+      } : null,
+      stepImages: stepImages.map(file => ({
+        filename: file.filename,
+        originalname: file.originalname,
+        path: file.path,
+        mimetype: file.mimetype,
+        size: file.size
+      }))
+    });
+
     // Get the uploaded image path if exists
     const imageUrl = recipeImage ? `/uploads/recipes/${recipeImage.filename}` : null;
 
-    // Match step images with steps
-    if (stepImages.length > 0) {
-      // Assuming step images are uploaded in order
-      stepImages.forEach((file, index) => {
-        if (steps[index]) {
-          steps[index].photo = {
-            extension: path.extname(file.originalname).substring(1),
-            url: `/uploads/steps/${file.filename}`
-          };
-        }
+    console.log('DEBUG - Original steps:', JSON.stringify(steps, null, 2));
+
+    // Clean steps data and map uploaded photos
+    let uploadedPhotoIdx = 0;
+    const processedSteps = steps.map((step, idx) => {
+      console.log(`DEBUG - Processing step ${idx}:`, {
+        stepPhotoIndex: step.photoIndex,
+        uploadedPhotoIdx,
+        hasUploadedPhoto: !!stepImages[uploadedPhotoIdx],
+        currentStep: step
       });
-    }
+
+      // If this step has a photo index and we have a corresponding uploaded file
+      if (step.photoIndex !== null && step.photoIndex !== undefined && stepImages[uploadedPhotoIdx]) {
+        const file = stepImages[uploadedPhotoIdx];
+        // Ensure the URL points to the correct directory
+        const photoUrl = `/uploads/steps/${file.filename}`;
+        const extension = path.extname(file.originalname).substring(1);
+        
+        console.log(`DEBUG - Adding photo to step ${idx}:`, {
+          photoUrl,
+          extension,
+          file: {
+            filename: file.filename,
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+            size: file.size,
+            path: file.path
+          }
+        });
+
+        uploadedPhotoIdx++;
+        return {
+          text: step.text,
+          photo: {
+            url: photoUrl,
+            extension: extension
+          }
+        };
+      }
+      
+      // No photo for this step
+      return { text: step.text };
+    });
+
+    console.log('DEBUG - Final steps:', JSON.stringify(processedSteps, null, 2));
 
     // Parse and validate ingredients
     let parsedIngredients = [];
@@ -296,11 +359,24 @@ exports.createRecipe = async (req, res) => {
         );
       } else {
         // Create new recipe
+        console.log('Creating recipe with data:', {
+          userId,
+          title,
+          description,
+          steps: processedSteps,
+          prepTime,
+          cookTime,
+          servings,
+          difficulty,
+          isPublic,
+          typeId,
+          imageUrl
+        });
         recipeId = await recipeModel.createRecipe({
           userId,
           title,
           description,
-          steps,
+          steps: processedSteps,
           prepTime,
           cookTime,
           servings,
@@ -697,6 +773,45 @@ exports.searchRecipes = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error searching recipes',
+      error: error.message
+    });
+  }
+};
+
+// Get all recipes
+exports.getAllRecipes = async (req, res) => {
+  try {
+    const [recipes] = await pool.query(
+      `SELECT r.*, u.nickname as authorName, rt.description as typeDescription
+       FROM recipes r
+       JOIN users u ON r.userId = u.userId
+       LEFT JOIN recipe_types rt ON r.typeId = rt.typeId
+       ORDER BY r.createdAt DESC`
+    );
+
+    // For each recipe, get its ingredients
+    for (let recipe of recipes) {
+      const [ingredients] = await pool.query(
+        `SELECT ui.*, i.name as ingredientName, u.name as unitName, u.abbreviation as unitAbbreviation
+         FROM usedIngredients ui
+         JOIN ingredients i ON ui.ingredientId = i.ingredientId
+         JOIN units u ON ui.unitId = u.unitId
+         WHERE ui.recipeId = ?`,
+        [recipe.recipeId]
+      );
+      recipe.ingredients = ingredients;
+    }
+
+    res.json({
+      success: true,
+      recipes: recipes
+    });
+
+  } catch (error) {
+    console.error('Error getting all recipes:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener las recetas',
       error: error.message
     });
   }

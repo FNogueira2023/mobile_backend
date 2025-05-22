@@ -88,9 +88,7 @@ exports.getUsers = async (req, res, next) => {
   }
 };
 
-
-
-//Step 0 : Validate nickname
+// Step 0 : Validate nickname
 exports.checkNickname = async (req, res) => {
   try {
     const { nickname } = req.body;
@@ -120,8 +118,6 @@ exports.checkNickname = async (req, res) => {
     res.status(500).json({ available: false, message: 'Internal server error' });
   }
 };
-
-
 
 // Step 1: Validate email and nickname
 exports.validateEmailAndNickname = async (req, res) => {
@@ -376,6 +372,97 @@ exports.resetPassword = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error'
+    });
+  }
+};
+
+// Get user by ID
+exports.getUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Get user basic info
+    const [user] = await require('../config/db').pool.query(
+      `SELECT 
+        u.userId,
+        u.email,
+        u.nickname,
+        u.fullName,
+        u.createdAt,
+        u.updatedAt,
+        u.enabled,
+        u.profileImage,
+        COUNT(DISTINCT r.recipeId) as totalRecipes
+       FROM users u
+       LEFT JOIN recipes r ON u.userId = r.userId
+       WHERE u.userId = ?
+       GROUP BY u.userId`,
+      [userId]
+    );
+
+    if (!user.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    // Get user's recent recipes (last 5)
+    const [recentRecipes] = await require('../config/db').pool.query(
+      `SELECT 
+        r.recipeId,
+        r.title,
+        r.description,
+        r.imageUrl,
+        r.createdAt,
+        r.difficulty,
+        r.typeId,
+        rt.description as typeDescription
+       FROM recipes r
+       LEFT JOIN recipe_types rt ON r.typeId = rt.typeId
+       WHERE r.userId = ?
+       ORDER BY r.createdAt DESC
+       LIMIT 5`,
+      [userId]
+    );
+
+    // Get user's favorite recipes (if any)
+    const [favoriteRecipes] = await require('../config/db').pool.query(
+      `SELECT 
+        r.recipeId,
+        r.title,
+        r.description,
+        r.imageUrl,
+        r.createdAt,
+        r.difficulty,
+        r.typeId,
+        rt.description as typeDescription,
+        u.nickname as authorName
+       FROM user_favorites f
+       JOIN recipes r ON f.recipeId = r.recipeId
+       LEFT JOIN recipe_types rt ON r.typeId = rt.typeId
+       LEFT JOIN users u ON r.userId = u.userId
+       WHERE f.userId = ?
+       ORDER BY f.createdAt DESC
+       LIMIT 5`,
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      user: {
+        ...user[0],
+        recentRecipes,
+        favoriteRecipes
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener la información del usuario',
+      error: error.message
     });
   }
 };

@@ -18,4 +18,7 @@ router.post('/register', userController.completeRegistration);
 router.post('/reset-password/request', userController.requestPasswordReset);
 router.post('/reset-password/complete', userController.resetPassword);
 
+// Get user by ID
+router.get('/:userId', userController.getUserById);
+
 module.exports = router; 

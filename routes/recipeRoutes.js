@@ -6,6 +6,9 @@ const { authenticateToken } = require('../middlewares/authMiddleware');
 // Search recipes
 router.get('/search', recipeController.searchRecipes);
 
+// Get all recipes
+router.get('/', recipeController.getAllRecipes);
+
 // Create a new recipe (requires authentication)
 router.post('/', 
   authenticateToken, 

@@ -105,6 +105,8 @@ async function createRecipe(recipeData) {
     imageUrl
   } = recipeData;
 
+  console.log('DEBUG - Creating recipe with steps:', JSON.stringify(steps, null, 2));
+
   const connection = await pool.getConnection();
   await connection.beginTransaction();
 
@@ -121,24 +123,47 @@ async function createRecipe(recipeData) {
     );
 
     const recipeId = result.insertId;
+    console.log('DEBUG - Recipe created with ID:', recipeId);
 
     // Insert steps
     if (steps && steps.length > 0) {
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
+        console.log(`DEBUG - Processing step ${i}:`, step);
+
+        // Insert step
         const [stepResult] = await connection.query(
           `INSERT INTO step (recipeId, numberStep, text) 
            VALUES (?, ?, ?)`,
           [recipeId, i + 1, step.text]
         );
 
+        const stepId = stepResult.insertId;
+        console.log(`DEBUG - Step created with ID: ${stepId}`);
+
         // If step has photo, insert it
-        if (step.photo) {
-          await connection.query(
-            `INSERT INTO photo (idStep, extension, url) 
-             VALUES (?, ?, ?)`,
-            [stepResult.insertId, step.photo.extension, step.photo.url]
-          );
+        if (step.photo && step.photo.url) {
+          console.log(`DEBUG - Inserting photo for step ${i}:`, step.photo);
+          
+          // Verify the photo URL is valid and points to the correct directory
+          if (step.photo.url.startsWith('/uploads/steps/')) {
+            try {
+              const [photoResult] = await connection.query(
+                `INSERT INTO photo (idStep, extension, url) 
+                 VALUES (?, ?, ?)`,
+                [stepId, step.photo.extension, step.photo.url]
+              );
+              console.log(`DEBUG - Photo inserted successfully for step ${i} with URL: ${step.photo.url}`);
+              console.log('DEBUG - Photo insert result:', photoResult);
+            } catch (error) {
+              console.error(`DEBUG - Error inserting photo for step ${i}:`, error);
+              throw error;
+            }
+          } else {
+            console.log(`DEBUG - Skipping invalid photo URL for step ${i}: ${step.photo.url}. URL must start with /uploads/steps/`);
+          }
+        } else {
+          console.log(`DEBUG - No photo for step ${i}`);
         }
       }
     }
@@ -146,6 +171,7 @@ async function createRecipe(recipeData) {
     await connection.commit();
     return recipeId;
   } catch (error) {
+    console.error('DEBUG - Error in createRecipe:', error);
     await connection.rollback();
     throw error;
   } finally {
@@ -170,4 +196,4 @@ module.exports = {
   searchRecipes, 
   createRecipe,
   getRecipeSteps
-}; 
+};
