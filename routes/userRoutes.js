@@ -21,4 +21,13 @@ router.post('/reset-password/complete', userController.resetPassword);
 // Get user by ID
 router.get('/:userId', userController.getUserById);
 
+// Get user favorites
+router.get('/:userId/favorites', userController.getUserFavorites);
+
+// Add recipe to favorites
+router.post('/:userId/favorites', userController.addToFavorites);
+
+// Remove recipe from favorites
+router.delete('/:userId/favorites/:recipeId', userController.removeFromFavorites);
+
 module.exports = router; 

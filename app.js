@@ -7,6 +7,7 @@ const userRoutes = require('./routes/userRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const recipeRoutes = require('./routes/recipeRoutes');
 const ingredientRoutes = require('./routes/ingredientRoutes');
+const ratingRoutes = require('./routes/ratingRoutes');
 // ... import other routes as needed
 
 // Middleware
@@ -18,6 +19,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/recipes', recipeRoutes);
 app.use('/api/ingredients', ingredientRoutes);
+app.use('/api', ratingRoutes);
 // ... use other routes as needed
 
 // Error handling middleware

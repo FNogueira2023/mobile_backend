@@ -466,3 +466,146 @@ exports.getUserById = async (req, res) => {
     });
   }
 };
+
+// Add recipe to favorites
+exports.addToFavorites = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { recipeId } = req.body;
+
+    if (!recipeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'El ID de la receta es requerido'
+      });
+    }
+
+    // Check if recipe exists
+    const [recipe] = await require('../config/db').pool.query(
+      'SELECT recipeId FROM recipes WHERE recipeId = ?',
+      [recipeId]
+    );
+
+    if (!recipe.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'La receta no existe'
+      });
+    }
+
+    // Check if recipe is already in favorites
+    const [existing] = await require('../config/db').pool.query(
+      'SELECT favoriteId FROM user_favorites WHERE userId = ? AND recipeId = ?',
+      [userId, recipeId]
+    );
+
+    if (existing.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'La receta ya está en tus favoritos'
+      });
+    }
+
+    // Add recipe to favorites
+    const [result] = await require('../config/db').pool.query(
+      'INSERT INTO user_favorites (userId, recipeId, createdAt) VALUES (?, ?, NOW())',
+      [userId, recipeId]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Receta agregada a favoritos exitosamente',
+      favoriteId: result.insertId
+    });
+
+  } catch (error) {
+    console.error('Error adding to favorites:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al agregar la receta a favoritos',
+      error: error.message
+    });
+  }
+};
+
+// Remove recipe from favorites
+exports.removeFromFavorites = async (req, res) => {
+  try {
+    const { userId, recipeId } = req.params;
+
+    // Check if recipe exists in favorites
+    const [favorite] = await require('../config/db').pool.query(
+      'SELECT favoriteId FROM user_favorites WHERE userId = ? AND recipeId = ?',
+      [userId, recipeId]
+    );
+
+    if (!favorite.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'La receta no está en tus favoritos'
+      });
+    }
+
+    // Remove recipe from favorites
+    await require('../config/db').pool.query(
+      'DELETE FROM user_favorites WHERE userId = ? AND recipeId = ?',
+      [userId, recipeId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Receta eliminada de favoritos exitosamente'
+    });
+
+  } catch (error) {
+    console.error('Error removing from favorites:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar la receta de favoritos',
+      error: error.message
+    });
+  }
+};
+
+// Get user favorites
+exports.getUserFavorites = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Get all favorite recipes for the user
+    const [favorites] = await require('../config/db').pool.query(
+      `SELECT 
+        r.recipeId,
+        r.title,
+        r.description,
+        r.imageUrl,
+        r.createdAt,
+        r.difficulty,
+        r.typeId,
+        rt.description as typeDescription,
+        u.nickname as authorName,
+        u.userId as authorId,
+        f.createdAt as favoritedAt
+       FROM user_favorites f
+       JOIN recipes r ON f.recipeId = r.recipeId
+       LEFT JOIN recipe_types rt ON r.typeId = rt.typeId
+       LEFT JOIN users u ON r.userId = u.userId
+       WHERE f.userId = ?
+       ORDER BY f.createdAt DESC`,
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      favorites
+    });
+
+  } catch (error) {
+    console.error('Error getting user favorites:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener las recetas favoritas',
+      error: error.message
+    });
+  }
+};
